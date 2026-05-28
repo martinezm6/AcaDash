@@ -1,80 +1,65 @@
 import { useEffect } from "react";
 import { format } from "date-fns";
+import { lsGet } from "@/lib/local-store";
+import type { Class, Subject, Task, Event } from "@shared/schema";
 
 const notifSupported = typeof Notification !== "undefined";
 
 export function NotificationManager() {
   useEffect(() => {
-    const runCheck = async () => {
+    const runCheck = () => {
       const enabled = localStorage.getItem("notificationsEnabled") === "true";
       if (!enabled || !notifSupported || Notification.permission !== "granted") return;
 
       const now = new Date();
       const today = format(now, "yyyy-MM-dd");
-
       const firedKey = `notifFired_${today}`;
       const fired: string[] = JSON.parse(localStorage.getItem(firedKey) || "[]");
-      let newFired = [...fired];
+      let changed = false;
 
-      const notify = (key: string, title: string, body: string) => {
+      const fire = (key: string, title: string, body: string) => {
         if (fired.includes(key)) return;
         new Notification(title, { body, icon: "/favicon.ico" });
-        newFired.push(key);
+        fired.push(key);
+        changed = true;
       };
 
-      try {
-        const [classesRes, subjectsRes] = await Promise.all([
-          fetch("/api/classes", { credentials: "include" }),
-          fetch("/api/subjects", { credentials: "include" }),
-        ]);
-        const classes = await classesRes.json();
-        const subjects = await subjectsRes.json();
+      // ── Classes starting within 10 minutes ──
+      const classes = lsGet<Class>("acadash_classes");
+      const subjects = lsGet<Subject>("acadash_subjects");
+      const todayDow = now.getDay() === 0 ? 7 : now.getDay();
 
-        const todayDow = now.getDay() === 0 ? 7 : now.getDay();
-        const todayClasses = classes.filter((c: any) => c.daysOfWeek?.includes(todayDow));
-
-        for (const cls of todayClasses) {
-          const [h, m] = cls.startTime.split(":").map(Number);
-          const classStart = new Date(now);
-          classStart.setHours(h, m, 0, 0);
-          const diffMin = (classStart.getTime() - now.getTime()) / 60000;
-
-          if (diffMin >= 0 && diffMin <= 10) {
-            const subject = subjects.find((s: any) => s.id === cls.subjectId);
-            const label = subject?.name || "Clase";
-            const room = cls.room ? ` · ${cls.room}` : "";
-            notify(`class_${cls.id}_${today}`, "🎓 Clase en 10 minutos", `${label} a las ${cls.startTime}${room}`);
-          }
+      for (const cls of classes) {
+        if (!cls.daysOfWeek?.includes(todayDow)) continue;
+        const [h, m] = cls.startTime.split(":").map(Number);
+        const start = new Date(now);
+        start.setHours(h, m, 0, 0);
+        const diff = (start.getTime() - now.getTime()) / 60000;
+        if (diff >= 0 && diff <= 10) {
+          const subj = subjects.find((s) => s.id === cls.subjectId);
+          const room = cls.room ? ` · ${cls.room}` : "";
+          fire(`class_${cls.id}_${today}`, "🎓 Clase en 10 minutos", `${subj?.name || "Clase"} a las ${cls.startTime}${room}`);
         }
-      } catch {}
-
-      try {
-        if (now.getHours() >= 7) {
-          const tasksRes = await fetch("/api/tasks", { credentials: "include" });
-          const tasks = await tasksRes.json();
-          for (const task of tasks.filter((t: any) => !t.completed)) {
-            if (format(new Date(task.dueDate), "yyyy-MM-dd") === today) {
-              notify(`task_${task.id}_${today}`, "📋 Tarea para hoy", `"${task.title}" vence hoy`);
-            }
-          }
-        }
-      } catch {}
-
-      try {
-        if (now.getHours() >= 7) {
-          const eventsRes = await fetch("/api/events", { credentials: "include" });
-          const events = await eventsRes.json();
-          for (const event of events) {
-            if (format(new Date(event.date), "yyyy-MM-dd") === today) {
-              notify(`event_${event.id}_${today}`, "📅 Evento hoy", `"${event.title}"`);
-            }
-          }
-        }
-      } catch {}
-
-      if (newFired.length > fired.length) {
-        localStorage.setItem(firedKey, JSON.stringify(newFired));
       }
+
+      // ── Tasks due today (notify from 7am) ──
+      if (now.getHours() >= 7) {
+        for (const task of lsGet<Task>("acadash_tasks")) {
+          if (task.completed) continue;
+          if (format(new Date(task.dueDate), "yyyy-MM-dd") === today) {
+            fire(`task_${task.id}_${today}`, "📋 Tarea para hoy", `"${task.title}" vence hoy`);
+          }
+        }
+
+        // ── Events today ──
+        for (const event of lsGet<Event>("acadash_events")) {
+          if (format(new Date(event.date), "yyyy-MM-dd") === today) {
+            fire(`event_${event.id}_${today}`, "📅 Evento hoy", `"${event.title}"`);
+          }
+        }
+      }
+
+      if (changed) localStorage.setItem(firedKey, JSON.stringify(fired));
     };
 
     runCheck();

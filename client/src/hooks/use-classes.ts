@@ -1,47 +1,37 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, buildUrl } from "@shared/routes";
-import { type InsertClass, type Class } from "@shared/schema";
+import { type Class, type InsertClass } from "@shared/schema";
+import { lsGet, lsSet, lsNextId } from "@/lib/local-store";
+
+const KEY = "acadash_classes" as const;
+const QK = ["/api/classes"];
 
 export function useClasses() {
   return useQuery({
-    queryKey: [api.classes.list.path],
-    queryFn: async () => {
-      const res = await fetch(api.classes.list.path, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch classes");
-      const data = await res.json();
-      return data as Class[];
-    },
+    queryKey: QK,
+    queryFn: () => lsGet<Class>(KEY),
+    staleTime: Infinity,
   });
 }
 
 export function useCreateClass() {
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: InsertClass) => {
-      const res = await fetch(api.classes.create.path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to create class");
-      return await res.json();
+      const items = lsGet<Class>(KEY);
+      const item = { ...data, id: lsNextId(items) } as Class;
+      lsSet(KEY, [...items, item]);
+      return item;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.classes.list.path] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK }),
   });
 }
 
 export function useDeleteClass() {
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: number) => {
-      const url = buildUrl(api.classes.delete.path, { id });
-      const res = await fetch(url, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to delete class");
+      lsSet(KEY, lsGet<Class>(KEY).filter((c) => c.id !== id));
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.classes.list.path] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK }),
   });
 }

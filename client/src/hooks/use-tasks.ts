@@ -1,65 +1,50 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, buildUrl } from "@shared/routes";
-import { type InsertTask, type Task } from "@shared/schema";
+import { type Task, type InsertTask } from "@shared/schema";
+import { lsGet, lsSet, lsNextId } from "@/lib/local-store";
+
+const KEY = "acadash_tasks" as const;
+const QK = ["/api/tasks"];
 
 export function useTasks() {
   return useQuery({
-    queryKey: [api.tasks.list.path],
-    queryFn: async () => {
-      const res = await fetch(api.tasks.list.path, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch tasks");
-      const data = await res.json();
-      return data as Task[];
-    },
+    queryKey: QK,
+    queryFn: () => lsGet<Task>(KEY),
+    staleTime: Infinity,
   });
 }
 
 export function useCreateTask() {
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: InsertTask) => {
-      const res = await fetch(api.tasks.create.path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to create task");
-      return await res.json();
+      const items = lsGet<Task>(KEY);
+      const item = { ...data, id: lsNextId(items) } as Task;
+      lsSet(KEY, [...items, item]);
+      return item;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.tasks.list.path] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK }),
   });
 }
 
 export function useUpdateTask() {
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...updates }: { id: number } & Partial<InsertTask>) => {
-      const url = buildUrl(api.tasks.update.path, { id });
-      const res = await fetch(url, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to update task");
-      return await res.json();
+      const items = lsGet<Task>(KEY);
+      const updated = items.map((t) => (t.id === id ? { ...t, ...updates } : t));
+      lsSet(KEY, updated);
+      return updated.find((t) => t.id === id)!;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.tasks.list.path] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK }),
   });
 }
 
 export function useDeleteTask() {
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: number) => {
-      const url = buildUrl(api.tasks.delete.path, { id });
-      const res = await fetch(url, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to delete task");
+      lsSet(KEY, lsGet<Task>(KEY).filter((t) => t.id !== id));
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.tasks.list.path] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK }),
   });
 }

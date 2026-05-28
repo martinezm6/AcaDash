@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { User, Moon, Sun, Save, Download, Upload, AlertTriangle, Trash2, Bell, BellOff, Camera, Check, Type } from "lucide-react";
+import { lsGet, lsSet, lsNextId } from "@/lib/local-store";
+import type { Subject, Task, Event, Class } from "@shared/schema";
 import { Switch } from "@/components/ui/switch";
 import {
   AlertDialog,
@@ -162,16 +164,9 @@ export default function Profile() {
     }
   };
 
-  const handleExport = async () => {
+  const handleExport = () => {
     setIsExporting(true);
     try {
-      const [sRes, tRes, eRes, cRes] = await Promise.all([
-        fetch("/api/subjects", { credentials: "include" }),
-        fetch("/api/tasks", { credentials: "include" }),
-        fetch("/api/events", { credentials: "include" }),
-        fetch("/api/classes", { credentials: "include" }),
-      ]);
-      const [subjects, tasks, events, classes] = await Promise.all([sRes.json(), tRes.json(), eRes.json(), cRes.json()]);
       const exportData = {
         version: 1,
         exportedAt: new Date().toISOString(),
@@ -182,7 +177,10 @@ export default function Profile() {
           colorPalette: localStorage.getItem("colorPalette") || "indigo",
           fontSize: localStorage.getItem("fontSize") || "normal",
         },
-        subjects, tasks, events, classes,
+        subjects: lsGet<Subject>("acadash_subjects"),
+        tasks: lsGet<Task>("acadash_tasks"),
+        events: lsGet<Event>("acadash_events"),
+        classes: lsGet<Class>("acadash_classes"),
       };
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -222,39 +220,63 @@ export default function Profile() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const executeImport = async () => {
+  const executeImport = () => {
     if (!pendingImport) return;
     setIsImporting(true);
     setShowImportConfirm(false);
     try {
       const data = pendingImport;
+
+      // Restore preferences
       if (data.preferences) {
         if (data.preferences.userName) { localStorage.setItem("userName", data.preferences.userName); setName(data.preferences.userName); }
         if (data.preferences.goalGrade) localStorage.setItem("goalGrade", data.preferences.goalGrade);
-        if (data.preferences.theme) { toggleTheme(data.preferences.theme === "dark"); }
+        if (data.preferences.theme) toggleTheme(data.preferences.theme === "dark");
         if (data.preferences.colorPalette) applyPalette(data.preferences.colorPalette);
         if (data.preferences.fontSize) applyFontSize(data.preferences.fontSize);
       }
+
+      // Import subjects, remap IDs to avoid collisions
+      const existingSubjects = lsGet<Subject>("acadash_subjects");
       const subjectIdMap: Record<number, number> = {};
-      for (const subject of data.subjects || []) {
-        const { id, ...subjectData } = subject;
-        const res = await fetch("/api/subjects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(subjectData), credentials: "include" });
-        if (res.ok) { const created = await res.json(); subjectIdMap[id] = created.id; }
+      let nextSId = lsNextId(existingSubjects);
+      const newSubjects = [...existingSubjects];
+      for (const s of data.subjects || []) {
+        const newId = nextSId++;
+        subjectIdMap[s.id] = newId;
+        newSubjects.push({ ...s, id: newId });
       }
-      for (const cls of data.classes || []) {
-        const { id, subjectId, ...classData } = cls;
-        await fetch("/api/classes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...classData, subjectId: subjectIdMap[subjectId] ?? subjectId }), credentials: "include" });
+      lsSet("acadash_subjects", newSubjects);
+
+      // Import classes with remapped subjectIds
+      const existingClasses = lsGet<Class>("acadash_classes");
+      let nextCId = lsNextId(existingClasses);
+      const newClasses = [...existingClasses];
+      for (const c of data.classes || []) {
+        newClasses.push({ ...c, id: nextCId++, subjectId: subjectIdMap[c.subjectId] ?? c.subjectId });
       }
-      for (const task of data.tasks || []) {
-        const { id, subjectId, ...taskData } = task;
-        await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...taskData, subjectId: subjectId ? (subjectIdMap[subjectId] ?? subjectId) : null }), credentials: "include" });
+      lsSet("acadash_classes", newClasses);
+
+      // Import tasks with remapped subjectIds
+      const existingTasks = lsGet<Task>("acadash_tasks");
+      let nextTId = lsNextId(existingTasks);
+      const newTasks = [...existingTasks];
+      for (const t of data.tasks || []) {
+        newTasks.push({ ...t, id: nextTId++, subjectId: t.subjectId ? (subjectIdMap[t.subjectId] ?? t.subjectId) : null });
       }
-      for (const event of data.events || []) {
-        const { id, ...eventData } = event;
-        await fetch("/api/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(eventData), credentials: "include" });
+      lsSet("acadash_tasks", newTasks);
+
+      // Import events
+      const existingEvents = lsGet<Event>("acadash_events");
+      let nextEId = lsNextId(existingEvents);
+      const newEvents = [...existingEvents];
+      for (const e of data.events || []) {
+        newEvents.push({ ...e, id: nextEId++ });
       }
-      toast({ title: "Datos importados" });
-      setTimeout(() => window.location.reload(), 1000);
+      lsSet("acadash_events", newEvents);
+
+      toast({ title: "Datos importados", description: `${data.subjects?.length ?? 0} materias, ${data.tasks?.length ?? 0} tareas importadas.` });
+      setTimeout(() => window.location.reload(), 800);
     } catch {
       toast({ title: "Error al importar", variant: "destructive" });
     } finally {
@@ -263,26 +285,17 @@ export default function Profile() {
     }
   };
 
-  const handleDeleteAll = async () => {
+  const handleDeleteAll = () => {
     setIsDeleting(true);
     setShowDeleteConfirm(false);
     try {
-      const [sRes, tRes, eRes, cRes] = await Promise.all([
-        fetch("/api/subjects", { credentials: "include" }),
-        fetch("/api/tasks", { credentials: "include" }),
-        fetch("/api/events", { credentials: "include" }),
-        fetch("/api/classes", { credentials: "include" }),
-      ]);
-      const [subjects, tasks, events, classes] = await Promise.all([sRes.json(), tRes.json(), eRes.json(), cRes.json()]);
-      await Promise.all([
-        ...subjects.map((s: any) => fetch(`/api/subjects/${s.id}`, { method: "DELETE", credentials: "include" })),
-        ...tasks.map((t: any) => fetch(`/api/tasks/${t.id}`, { method: "DELETE", credentials: "include" })),
-        ...events.map((e: any) => fetch(`/api/events/${e.id}`, { method: "DELETE", credentials: "include" })),
-        ...classes.map((c: any) => fetch(`/api/classes/${c.id}`, { method: "DELETE", credentials: "include" })),
-      ]);
+      lsSet("acadash_subjects", []);
+      lsSet("acadash_tasks", []);
+      lsSet("acadash_events", []);
+      lsSet("acadash_classes", []);
       localStorage.removeItem("goalGrade");
       toast({ title: "Datos eliminados", description: "Todos tus datos han sido borrados." });
-      setTimeout(() => window.location.reload(), 1000);
+      setTimeout(() => window.location.reload(), 800);
     } catch {
       toast({ title: "Error al eliminar", variant: "destructive" });
     } finally {

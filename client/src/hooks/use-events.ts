@@ -1,47 +1,37 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, buildUrl } from "@shared/routes";
-import { type InsertEvent, type Event } from "@shared/schema";
+import { type Event, type InsertEvent } from "@shared/schema";
+import { lsGet, lsSet, lsNextId } from "@/lib/local-store";
+
+const KEY = "acadash_events" as const;
+const QK = ["/api/events"];
 
 export function useEvents() {
   return useQuery({
-    queryKey: [api.events.list.path],
-    queryFn: async () => {
-      const res = await fetch(api.events.list.path, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch events");
-      const data = await res.json();
-      return data as Event[];
-    },
+    queryKey: QK,
+    queryFn: () => lsGet<Event>(KEY),
+    staleTime: Infinity,
   });
 }
 
 export function useCreateEvent() {
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: InsertEvent) => {
-      const res = await fetch(api.events.create.path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to create event");
-      return await res.json();
+      const items = lsGet<Event>(KEY);
+      const item = { ...data, id: lsNextId(items) } as Event;
+      lsSet(KEY, [...items, item]);
+      return item;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.events.list.path] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK }),
   });
 }
 
 export function useDeleteEvent() {
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: number) => {
-      const url = buildUrl(api.events.delete.path, { id });
-      const res = await fetch(url, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to delete event");
+      lsSet(KEY, lsGet<Event>(KEY).filter((e) => e.id !== id));
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.events.list.path] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK }),
   });
 }
