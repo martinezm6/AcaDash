@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, MapPin, User, Clock } from "lucide-react";
+import { Plus, Trash2, MapPin, User, Clock, Info } from "lucide-react";
+import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 
 const DAYS = [
@@ -84,14 +85,40 @@ export default function Schedule() {
             <form onSubmit={handleSubmit} className="space-y-4 mt-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Materia</label>
-                <Select required value={formData.subjectId} onValueChange={v => setFormData({...formData, subjectId: v})}>
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue placeholder="Selecciona..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {subjects.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                {subjects.length === 0 ? (
+                  <div className="flex flex-col items-center gap-3 p-4 rounded-xl bg-orange-500/10 border border-orange-500/20 text-center">
+                    <Info className="w-5 h-5 text-orange-500" />
+                    <p className="text-sm text-orange-700 dark:text-orange-400 font-medium">
+                      No tienes materias registradas todavía.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Primero crea tus materias en la sección de Materias y Calificaciones.
+                    </p>
+                    <Link href="/subjects">
+                      <span className="text-xs font-semibold text-primary underline cursor-pointer hover:opacity-80">
+                        Ir a Materias →
+                      </span>
+                    </Link>
+                  </div>
+                ) : (
+                  <>
+                    <Select required value={formData.subjectId} onValueChange={v => setFormData({...formData, subjectId: v})}>
+                      <SelectTrigger className="rounded-xl">
+                        <SelectValue placeholder="Selecciona..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {subjects.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 pt-0.5">
+                      <Info className="w-3.5 h-3.5 shrink-0" />
+                      ¿No encuentras tu materia?{" "}
+                      <Link href="/subjects">
+                        <span className="text-primary underline cursor-pointer hover:opacity-80 font-medium">Créala primero aquí</span>
+                      </Link>
+                    </p>
+                  </>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Días de la semana</label>

@@ -103,8 +103,8 @@ export default function Subjects() {
     suggestedGrade = neededTotal / pendingSubjects.length;
   }
   
-  const avgGrade = subjects.length > 0 
-    ? subjects.reduce((acc, s) => acc + Number(s.currentGrade || 0), 0) / subjects.length 
+  const avgGrade = completedSubjects.length > 0
+    ? completedSubjects.reduce((acc, s) => acc + Number(s.currentGrade || 0), 0) / completedSubjects.length
     : 0;
   const needsImprovement = avgGrade > 0 && avgGrade < goalGrade - 0.5;
 

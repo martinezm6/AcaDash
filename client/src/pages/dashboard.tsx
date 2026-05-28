@@ -47,8 +47,9 @@ export default function Dashboard() {
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
     .slice(0, 5);
 
-  const avgGrade = subjects.length > 0 
-    ? subjects.reduce((acc, s) => acc + Number(s.currentGrade || 0), 0) / subjects.length 
+  const completedSubjects = subjects.filter(s => s.completed && s.currentGrade);
+  const avgGrade = completedSubjects.length > 0
+    ? completedSubjects.reduce((acc, s) => acc + Number(s.currentGrade || 0), 0) / completedSubjects.length
     : 0;
 
   const userName = localStorage.getItem("userName") || "Estudiante";
