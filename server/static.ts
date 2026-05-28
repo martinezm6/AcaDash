@@ -10,9 +10,9 @@ export function serveStatic(app: Express) {
 
   app.use(express.static(distPath));
 
-  // CORRECCIÓN PARA EXPRESS 5: Se cambia '*' por '(.*)' 
-  // Esto le permite a path-to-regexp procesar la ruta comodín sin colapsar
-  app.get("(.*)", (_req, res) => {
+  // SOLUCIÓN TOTAL EXPRESS 5: Expresión regular pura para capturar todo
+  // Evita que path-to-regexp intente parsear strings con comodines o paréntesis
+  app.get(/^.*$/, (_req, res) => {
     res.sendFile(path.join(distPath, "index.html"));
   });
 }
