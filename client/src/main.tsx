@@ -12,4 +12,12 @@ if (savedPalette && savedPalette !== "indigo") {
   document.documentElement.setAttribute("data-palette", savedPalette);
 }
 
+// ======= CORRECCIÓN DE CACHÉ PARA SAFARI EN IPAD =======
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) {
+    window.location.reload();
+  }
+});
+// =======================================================
+
 createRoot(document.getElementById("root")!).render(<App />);
