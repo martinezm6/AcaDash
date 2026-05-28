@@ -61,7 +61,8 @@ export default function CalendarApp() {
           <DialogTrigger asChild>
             <Button className="rounded-xl shadow-lg shadow-primary/20">
               <Plus className="w-5 h-5 mr-2" />
-              Nuevo Evento
+              <span className="hidden sm:inline">Nuevo Evento</span>
+              <span className="sm:hidden">Nuevo</span>
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-md rounded-2xl">
@@ -101,33 +102,42 @@ export default function CalendarApp() {
         </Dialog>
       </div>
 
-      <div className="grid lg:grid-cols-[auto_1fr] gap-8">
+      {/* Responsive layout: calendar stacks above on mobile */}
+      <div className="grid gap-6 lg:grid-cols-[auto_1fr]">
         <Card className="glass-card h-fit">
-          <CardContent className="p-3">
-            <CalendarUI
-              mode="single"
-              selected={date}
-              onSelect={setDate}
-              className="rounded-xl"
-              classNames={{
-                day_selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground rounded-full",
-                day_today: "bg-accent/20 text-accent font-bold rounded-full",
-                day: "w-10 h-10 flex items-center justify-center p-0 font-normal hover:bg-muted rounded-full transition-all",
-              }}
-            />
+          <CardContent className="p-2 sm:p-3">
+            {/* Allow horizontal scroll on very narrow viewports */}
+            <div className="overflow-x-auto">
+              <div className="min-w-[280px]">
+                <CalendarUI
+                  mode="single"
+                  selected={date}
+                  onSelect={setDate}
+                  className="rounded-xl"
+                  classNames={{
+                    cell: "h-9 w-9 text-center text-sm p-0 relative focus-within:relative focus-within:z-20",
+                    day: "h-9 w-9 p-0 font-normal rounded-full hover:bg-muted transition-all flex items-center justify-center",
+                    day_selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground rounded-full",
+                    day_today: "bg-accent/20 text-accent font-bold rounded-full",
+                    day_outside: "text-muted-foreground opacity-50",
+                  }}
+                />
+              </div>
+            </div>
           </CardContent>
         </Card>
 
-        <Card className="glass-card min-h-[500px]">
+        <Card className="glass-card min-h-[400px]">
           <CardHeader className="border-b border-border/50 pb-4">
             <CardTitle className="text-xl flex items-center gap-2">
-              <CalendarIcon className="w-5 h-5 text-primary" />
-              {date ? format(date, "EEEE, d 'de' MMMM", { locale: es }) : "Selecciona una fecha"}
+              <CalendarIcon className="w-5 h-5 text-primary shrink-0" />
+              <span className="truncate">
+                {date ? format(date, "EEEE, d 'de' MMMM", { locale: es }) : "Selecciona una fecha"}
+              </span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-6 space-y-6">
+          <CardContent className="p-4 sm:p-6 space-y-6">
             
-            {/* Events Section */}
             <div>
               <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider mb-4">Eventos programados</h3>
               {selectedDateEvents.length === 0 ? (
@@ -136,16 +146,16 @@ export default function CalendarApp() {
                 <div className="space-y-3">
                   {selectedDateEvents.map(event => (
                     <div key={event.id} className="flex items-start justify-between p-4 rounded-xl bg-secondary/30 border border-border/50 group">
-                      <div className="flex gap-3">
+                      <div className="flex gap-3 min-w-0">
                         <div className={`w-2 h-10 rounded-full shrink-0 ${event.type === 'academic' ? 'bg-primary' : 'bg-accent'}`}></div>
-                        <div>
-                          <p className="font-semibold text-foreground leading-none mb-1.5">{event.title}</p>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-foreground leading-none mb-1.5 truncate">{event.title}</p>
                           {event.description && <p className="text-sm text-muted-foreground">{event.description}</p>}
                         </div>
                       </div>
                       <button 
                         onClick={() => { if(confirm("¿Eliminar evento?")) deleteEvent.mutate(event.id); }}
-                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-2"
+                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-2 shrink-0"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -155,8 +165,7 @@ export default function CalendarApp() {
               )}
             </div>
 
-            {/* Tasks Section */}
-            <div className="pt-4">
+            <div className="pt-2">
               <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider mb-4 flex items-center gap-2">
                 <CheckSquare className="w-4 h-4" />
                 Tareas por entregar
@@ -167,8 +176,8 @@ export default function CalendarApp() {
                 <div className="space-y-3">
                   {selectedDateTasks.map(task => (
                     <div key={task.id} className={`flex items-center p-3 rounded-xl border ${task.completed ? 'bg-muted/50 border-transparent opacity-60' : 'bg-card border-orange-500/30 shadow-sm'}`}>
-                      <div className="w-2 h-2 rounded-full bg-orange-500 mr-3"></div>
-                      <p className={`font-medium ${task.completed ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
+                      <div className="w-2 h-2 rounded-full bg-orange-500 mr-3 shrink-0"></div>
+                      <p className={`font-medium text-sm ${task.completed ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
                         {task.title}
                       </p>
                     </div>

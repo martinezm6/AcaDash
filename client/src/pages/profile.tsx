@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { User, Moon, Sun, Save, Download, Upload, AlertTriangle, Trash2, Bell, BellOff, Camera, Check } from "lucide-react";
+import { User, Moon, Sun, Save, Download, Upload, AlertTriangle, Trash2, Bell, BellOff, Camera, Check, Type } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import {
   AlertDialog,
@@ -24,6 +24,15 @@ const PALETTES = [
   { id: "amber", label: "Ámbar", light: "#f59e0b", dark: "#fbbf24" },
   { id: "sky", label: "Cielo", light: "#0ea5e9", dark: "#38bdf8" },
 ];
+
+const FONT_SIZES = [
+  { id: "normal", label: "Normal", cls: "text-sm" },
+  { id: "large", label: "Grande", cls: "text-base" },
+  { id: "xl", label: "Muy Grande", cls: "text-lg" },
+];
+
+// Notification API is NOT available in iOS Safari
+const notifSupported = typeof Notification !== "undefined";
 
 function resizeImageToBase64(file: File, size = 200): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -60,6 +69,7 @@ export default function Profile() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [notifEnabled, setNotifEnabled] = useState(localStorage.getItem("notificationsEnabled") === "true");
+  const [fontSize, setFontSize] = useState<string>(localStorage.getItem("fontSize") || "normal");
 
   const [theme, setTheme] = useState<string>(() =>
     document.documentElement.classList.contains("dark") ? "dark" : "light"
@@ -109,7 +119,23 @@ export default function Profile() {
     }
   };
 
+  const applyFontSize = (size: string) => {
+    setFontSize(size);
+    localStorage.setItem("fontSize", size);
+    document.documentElement.classList.remove("font-large", "font-xl");
+    if (size === "large") document.documentElement.classList.add("font-large");
+    else if (size === "xl") document.documentElement.classList.add("font-xl");
+  };
+
   const toggleNotifications = async (checked: boolean) => {
+    if (!notifSupported) {
+      toast({
+        title: "No disponible",
+        description: "Las notificaciones del navegador no están disponibles en este dispositivo.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (checked) {
       if (Notification.permission === "denied") {
         toast({
@@ -122,11 +148,7 @@ export default function Profile() {
       if (Notification.permission !== "granted") {
         const result = await Notification.requestPermission();
         if (result !== "granted") {
-          toast({
-            title: "Permiso denegado",
-            description: "No se pudo activar las notificaciones.",
-            variant: "destructive",
-          });
+          toast({ title: "Permiso denegado", variant: "destructive" });
           return;
         }
       }
@@ -150,7 +172,6 @@ export default function Profile() {
         fetch("/api/classes", { credentials: "include" }),
       ]);
       const [subjects, tasks, events, classes] = await Promise.all([sRes.json(), tRes.json(), eRes.json(), cRes.json()]);
-
       const exportData = {
         version: 1,
         exportedAt: new Date().toISOString(),
@@ -159,10 +180,10 @@ export default function Profile() {
           goalGrade: localStorage.getItem("goalGrade") || "8.5",
           theme: localStorage.getItem("theme") || "light",
           colorPalette: localStorage.getItem("colorPalette") || "indigo",
+          fontSize: localStorage.getItem("fontSize") || "normal",
         },
         subjects, tasks, events, classes,
       };
-
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -210,8 +231,9 @@ export default function Profile() {
       if (data.preferences) {
         if (data.preferences.userName) { localStorage.setItem("userName", data.preferences.userName); setName(data.preferences.userName); }
         if (data.preferences.goalGrade) localStorage.setItem("goalGrade", data.preferences.goalGrade);
-        if (data.preferences.theme) { localStorage.setItem("theme", data.preferences.theme); toggleTheme(data.preferences.theme === "dark"); }
+        if (data.preferences.theme) { toggleTheme(data.preferences.theme === "dark"); }
         if (data.preferences.colorPalette) applyPalette(data.preferences.colorPalette);
+        if (data.preferences.fontSize) applyFontSize(data.preferences.fontSize);
       }
       const subjectIdMap: Record<number, number> = {};
       for (const subject of data.subjects || []) {
@@ -231,7 +253,7 @@ export default function Profile() {
         const { id, ...eventData } = event;
         await fetch("/api/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(eventData), credentials: "include" });
       }
-      toast({ title: "Datos importados", description: `${data.subjects?.length ?? 0} materias, ${data.tasks?.length ?? 0} tareas importadas.` });
+      toast({ title: "Datos importados" });
       setTimeout(() => window.location.reload(), 1000);
     } catch {
       toast({ title: "Error al importar", variant: "destructive" });
@@ -252,14 +274,12 @@ export default function Profile() {
         fetch("/api/classes", { credentials: "include" }),
       ]);
       const [subjects, tasks, events, classes] = await Promise.all([sRes.json(), tRes.json(), eRes.json(), cRes.json()]);
-
       await Promise.all([
         ...subjects.map((s: any) => fetch(`/api/subjects/${s.id}`, { method: "DELETE", credentials: "include" })),
         ...tasks.map((t: any) => fetch(`/api/tasks/${t.id}`, { method: "DELETE", credentials: "include" })),
         ...events.map((e: any) => fetch(`/api/events/${e.id}`, { method: "DELETE", credentials: "include" })),
         ...classes.map((c: any) => fetch(`/api/classes/${c.id}`, { method: "DELETE", credentials: "include" })),
       ]);
-
       localStorage.removeItem("goalGrade");
       toast({ title: "Datos eliminados", description: "Todos tus datos han sido borrados." });
       setTimeout(() => window.location.reload(), 1000);
@@ -271,6 +291,7 @@ export default function Profile() {
   };
 
   const isDark = theme === "dark";
+  const notifDenied = notifSupported && Notification.permission === "denied";
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -339,15 +360,16 @@ export default function Profile() {
         </Card>
 
         {/* Apariencia */}
-        <Card className="glass-card">
+        <Card className="glass-card md:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               {isDark ? <Moon className="w-5 h-5 text-primary" /> : <Sun className="w-5 h-5 text-primary" />}
               Apariencia
             </CardTitle>
-            <CardDescription>Modo oscuro y paleta de colores.</CardDescription>
+            <CardDescription>Modo oscuro, paleta de colores y tamaño de texto.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-5">
+          <CardContent className="space-y-6">
+            {/* Dark mode */}
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Modo Oscuro</Label>
@@ -355,7 +377,9 @@ export default function Profile() {
               </div>
               <Switch checked={isDark} onCheckedChange={toggleTheme} />
             </div>
-            <div className="space-y-2">
+
+            {/* Color palette */}
+            <div className="space-y-3">
               <Label>Paleta de Colores</Label>
               <div className="flex gap-3 flex-wrap">
                 {PALETTES.map((p) => (
@@ -363,21 +387,37 @@ export default function Profile() {
                     key={p.id}
                     onClick={() => applyPalette(p.id)}
                     title={p.label}
-                    className={`flex flex-col items-center gap-1.5 group transition-all`}
+                    className="flex flex-col items-center gap-1.5"
                   >
                     <div
-                      className={`w-9 h-9 rounded-full shadow-md transition-all ring-2 ring-offset-2 ring-offset-card ${palette === p.id ? "ring-foreground scale-110" : "ring-transparent"}`}
+                      className={`w-10 h-10 rounded-full shadow-md transition-all ring-2 ring-offset-2 ring-offset-card flex items-center justify-center ${palette === p.id ? "ring-foreground scale-110" : "ring-transparent"}`}
                       style={{ background: `linear-gradient(135deg, ${p.light}, ${p.dark})` }}
                     >
-                      {palette === p.id && (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Check className="w-4 h-4 text-white drop-shadow" />
-                        </div>
-                      )}
+                      {palette === p.id && <Check className="w-4 h-4 text-white drop-shadow" />}
                     </div>
                     <span className={`text-xs font-medium ${palette === p.id ? "text-foreground" : "text-muted-foreground"}`}>
                       {p.label}
                     </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Font size */}
+            <div className="space-y-3">
+              <Label className="flex items-center gap-2">
+                <Type className="w-4 h-4" />
+                Tamaño de Texto
+              </Label>
+              <div className="flex gap-3">
+                {FONT_SIZES.map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => applyFontSize(opt.id)}
+                    className={`flex-1 py-3 px-2 rounded-xl border-2 transition-all text-center ${fontSize === opt.id ? "border-primary bg-primary/10 text-primary font-semibold" : "border-border hover:border-primary/50 text-muted-foreground"}`}
+                  >
+                    <div className={`font-bold ${opt.cls}`}>Aa</div>
+                    <p className="text-xs mt-1">{opt.label}</p>
                   </button>
                 ))}
               </div>
@@ -392,25 +432,33 @@ export default function Profile() {
               {notifEnabled ? <Bell className="w-5 h-5 text-primary" /> : <BellOff className="w-5 h-5 text-muted-foreground" />}
               Notificaciones
             </CardTitle>
-            <CardDescription>Recibe alertas del navegador para tus clases, tareas y eventos.</CardDescription>
+            <CardDescription>Alertas del navegador para clases, tareas y eventos.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Activar Notificaciones</Label>
-                <p className="text-sm text-muted-foreground">Alertas 10 min antes de clases y el día de tareas/eventos.</p>
+            {!notifSupported ? (
+              <div className="p-3 rounded-xl bg-muted/50 border border-border text-sm text-muted-foreground">
+                Las notificaciones no están disponibles en este navegador/dispositivo.
               </div>
-              <Switch checked={notifEnabled} onCheckedChange={toggleNotifications} />
-            </div>
-            {notifEnabled && (
-              <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 text-sm text-primary animate-in fade-in duration-300">
-                ✅ Las notificaciones están activas. Asegúrate de tener el navegador abierto.
-              </div>
-            )}
-            {!notifEnabled && Notification.permission === "denied" && (
-              <div className="p-3 rounded-xl bg-destructive/5 border border-destructive/20 text-sm text-destructive">
-                ⚠️ El navegador bloqueó las notificaciones. Habilítalas en la configuración del sitio.
-              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label>Activar Notificaciones</Label>
+                    <p className="text-sm text-muted-foreground">10 min antes de clases · día de tareas y eventos.</p>
+                  </div>
+                  <Switch checked={notifEnabled} onCheckedChange={toggleNotifications} />
+                </div>
+                {notifEnabled && (
+                  <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 text-sm text-primary">
+                    ✅ Activas. Mantén el navegador abierto para recibir alertas.
+                  </div>
+                )}
+                {notifDenied && (
+                  <div className="p-3 rounded-xl bg-destructive/5 border border-destructive/20 text-sm text-destructive">
+                    ⚠️ Bloqueadas por el navegador. Habilítalas en Configuración del sitio.
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
@@ -420,28 +468,15 @@ export default function Profile() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Download className="w-5 h-5 text-primary" />
-              Exportar Datos
+              Exportar / Importar
             </CardTitle>
-            <CardDescription>Descarga un respaldo completo para cambiarte de dispositivo.</CardDescription>
+            <CardDescription>Descarga un respaldo o restaura desde un archivo.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             <Button onClick={handleExport} disabled={isExporting} variant="outline" className="w-full rounded-xl transition-all active:scale-95">
               <Download className="w-4 h-4 mr-2" />
               {isExporting ? "Exportando..." : "Descargar Respaldo (.json)"}
             </Button>
-          </CardContent>
-        </Card>
-
-        {/* Importar */}
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="w-5 h-5 text-primary" />
-              Importar Datos
-            </CardTitle>
-            <CardDescription>Restaura tus datos desde un archivo de respaldo.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
             <div className="flex items-start gap-2 p-3 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-700 dark:text-orange-400 text-sm">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <p>Los datos importados se añadirán a los existentes.</p>
@@ -449,7 +484,7 @@ export default function Profile() {
             <input ref={fileInputRef} type="file" accept=".json" onChange={handleFileSelected} className="hidden" />
             <Button onClick={() => fileInputRef.current?.click()} disabled={isImporting} variant="outline" className="w-full rounded-xl transition-all active:scale-95">
               <Upload className="w-4 h-4 mr-2" />
-              {isImporting ? "Importando..." : "Seleccionar Archivo"}
+              {isImporting ? "Importando..." : "Importar Archivo"}
             </Button>
           </CardContent>
         </Card>
@@ -467,7 +502,7 @@ export default function Profile() {
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 rounded-xl border border-destructive/20 bg-destructive/5">
               <div>
                 <p className="font-semibold text-sm">Borrar todos los datos</p>
-                <p className="text-sm text-muted-foreground mt-0.5">Elimina permanentemente todas las materias, tareas, clases y eventos.</p>
+                <p className="text-sm text-muted-foreground mt-0.5">Elimina permanentemente materias, tareas, clases y eventos.</p>
               </div>
               <Button
                 variant="destructive"
@@ -483,13 +518,12 @@ export default function Profile() {
         </Card>
       </div>
 
-      {/* Delete confirm */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent className="rounded-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle>¿Borrar todos los datos?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción eliminará permanentemente todas tus materias, tareas, clases y eventos. Esta acción <strong>no se puede deshacer</strong>. Te recomendamos exportar un respaldo antes.
+              Esta acción eliminará permanentemente todas tus materias, tareas, clases y eventos. <strong>No se puede deshacer.</strong> Te recomendamos exportar un respaldo antes.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -501,13 +535,12 @@ export default function Profile() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Import confirm */}
       <AlertDialog open={showImportConfirm} onOpenChange={setShowImportConfirm}>
         <AlertDialogContent className="rounded-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle>¿Importar datos?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se importarán {pendingImport?.subjects?.length ?? 0} materias, {pendingImport?.tasks?.length ?? 0} tareas, {pendingImport?.classes?.length ?? 0} clases y {pendingImport?.events?.length ?? 0} eventos desde el archivo.
+              Se importarán {pendingImport?.subjects?.length ?? 0} materias, {pendingImport?.tasks?.length ?? 0} tareas, {pendingImport?.classes?.length ?? 0} clases y {pendingImport?.events?.length ?? 0} eventos.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -2,22 +2,21 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 
-// Apply saved theme and palette before first render to avoid flash
+// Apply saved theme before first render to avoid flash
 const savedTheme = localStorage.getItem("theme");
 if (savedTheme === "dark") {
   document.documentElement.classList.add("dark");
 }
+
+// Apply saved color palette
 const savedPalette = localStorage.getItem("colorPalette");
 if (savedPalette && savedPalette !== "indigo") {
   document.documentElement.setAttribute("data-palette", savedPalette);
 }
 
-// ======= CORRECCIÓN DE CACHÉ PARA SAFARI EN IPAD =======
-window.addEventListener("pageshow", (event) => {
-  if (event.persisted) {
-    window.location.reload();
-  }
-});
-// =======================================================
+// Apply saved font size
+const savedFontSize = localStorage.getItem("fontSize");
+if (savedFontSize === "large") document.documentElement.classList.add("font-large");
+else if (savedFontSize === "xl") document.documentElement.classList.add("font-xl");
 
 createRoot(document.getElementById("root")!).render(<App />);
