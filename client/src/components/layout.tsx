@@ -1,4 +1,5 @@
 import { Link, useLocation } from "wouter";
+import { useState, useEffect } from "react";
 import { 
   SidebarProvider, 
   Sidebar, 
@@ -31,6 +32,26 @@ const navItems = [
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [userName, setUserName] = useState("Estudiante");
+
+  useEffect(() => {
+    const syncProfile = () => {
+      setPhoto(localStorage.getItem("profilePhoto"));
+      setUserName(localStorage.getItem("userName") || "Estudiante");
+    };
+    syncProfile();
+    window.addEventListener("storage", syncProfile);
+    return () => window.removeEventListener("storage", syncProfile);
+  }, []);
+
+  // Also refresh when navigating back to layout (e.g. after saving profile)
+  useEffect(() => {
+    setPhoto(localStorage.getItem("profilePhoto"));
+    setUserName(localStorage.getItem("userName") || "Estudiante");
+  }, [location]);
+
+  const initials = userName.charAt(0).toUpperCase();
 
   return (
     <SidebarProvider>
@@ -78,12 +99,31 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-4">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-accent shadow-sm flex items-center justify-center text-white font-bold text-sm text-center hover:opacity-90 transition-opacity">
-                    ES
+                  <button className="w-9 h-9 rounded-full overflow-hidden ring-2 ring-primary/20 hover:ring-primary/50 transition-all shadow-sm">
+                    {photo ? (
+                      <img src={photo} alt="Perfil" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-white font-bold text-sm">
+                        {initials}
+                      </div>
+                    )}
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56 rounded-xl">
-                  <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
+                  <DropdownMenuLabel>
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full overflow-hidden ring-1 ring-border shrink-0">
+                        {photo ? (
+                          <img src={photo} alt="Perfil" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-white font-bold text-xs">
+                            {initials}
+                          </div>
+                        )}
+                      </div>
+                      <span className="truncate">{userName}</span>
+                    </div>
+                  </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild className="rounded-lg cursor-pointer">
                     <Link href="/profile" className="flex items-center w-full">

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { User, Moon, Sun, Save, Download, Upload, AlertTriangle } from "lucide-react";
+import { User, Moon, Sun, Save, Download, Upload, AlertTriangle, Trash2, Bell, BellOff, Camera, Check } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import {
   AlertDialog,
@@ -17,57 +17,139 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+const PALETTES = [
+  { id: "indigo", label: "Índigo", light: "#6366f1", dark: "#818cf8" },
+  { id: "emerald", label: "Esmeralda", light: "#10b981", dark: "#34d399" },
+  { id: "rose", label: "Rosa", light: "#f43f5e", dark: "#fb7185" },
+  { id: "amber", label: "Ámbar", light: "#f59e0b", dark: "#fbbf24" },
+  { id: "sky", label: "Cielo", light: "#0ea5e9", dark: "#38bdf8" },
+];
+
+function resizeImageToBase64(file: File, size = 200): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d")!;
+      const min = Math.min(img.width, img.height);
+      const sx = (img.width - min) / 2;
+      const sy = (img.height - min) / 2;
+      ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", 0.8));
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
 export default function Profile() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
   const [name, setName] = useState(localStorage.getItem("userName") || "Estudiante");
+  const [photo, setPhoto] = useState<string | null>(localStorage.getItem("profilePhoto"));
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [pendingImport, setPendingImport] = useState<any>(null);
   const [showImportConfirm, setShowImportConfirm] = useState(false);
-  const [theme, setTheme] = useState(() => {
-    if (typeof window !== "undefined") {
-      return document.documentElement.classList.contains("dark") ? "dark" : "light";
-    }
-    return "light";
-  });
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [notifEnabled, setNotifEnabled] = useState(localStorage.getItem("notificationsEnabled") === "true");
+
+  const [theme, setTheme] = useState<string>(() =>
+    document.documentElement.classList.contains("dark") ? "dark" : "light"
+  );
+  const [palette, setPalette] = useState<string>(
+    localStorage.getItem("colorPalette") || "indigo"
+  );
 
   const handleSave = () => {
     localStorage.setItem("userName", name);
-    toast({
-      title: "Perfil actualizado",
-      description: "Tus cambios han sido guardados correctamente.",
-    });
+    toast({ title: "Perfil actualizado", description: "Tu nombre ha sido guardado." });
+  };
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const base64 = await resizeImageToBase64(file);
+      localStorage.setItem("profilePhoto", base64);
+      setPhoto(base64);
+      toast({ title: "Foto actualizada", description: "Tu foto de perfil ha sido guardada." });
+    } catch {
+      toast({ title: "Error", description: "No se pudo procesar la imagen.", variant: "destructive" });
+    }
+    if (photoInputRef.current) photoInputRef.current.value = "";
+  };
+
+  const removePhoto = () => {
+    localStorage.removeItem("profilePhoto");
+    setPhoto(null);
   };
 
   const toggleTheme = (checked: boolean) => {
     const newTheme = checked ? "dark" : "light";
     setTheme(newTheme);
-    if (newTheme === "dark") {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("theme", "dark");
+    document.documentElement.classList.toggle("dark", checked);
+    localStorage.setItem("theme", newTheme);
+  };
+
+  const applyPalette = (id: string) => {
+    setPalette(id);
+    localStorage.setItem("colorPalette", id);
+    if (id === "indigo") {
+      document.documentElement.removeAttribute("data-palette");
     } else {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("theme", "light");
+      document.documentElement.setAttribute("data-palette", id);
+    }
+  };
+
+  const toggleNotifications = async (checked: boolean) => {
+    if (checked) {
+      if (Notification.permission === "denied") {
+        toast({
+          title: "Permiso denegado",
+          description: "Activa las notificaciones en la configuración de tu navegador.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (Notification.permission !== "granted") {
+        const result = await Notification.requestPermission();
+        if (result !== "granted") {
+          toast({
+            title: "Permiso denegado",
+            description: "No se pudo activar las notificaciones.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+      localStorage.setItem("notificationsEnabled", "true");
+      setNotifEnabled(true);
+      toast({ title: "Notificaciones activadas", description: "Recibirás alertas de clases, tareas y eventos." });
+    } else {
+      localStorage.setItem("notificationsEnabled", "false");
+      setNotifEnabled(false);
+      toast({ title: "Notificaciones desactivadas" });
     }
   };
 
   const handleExport = async () => {
     setIsExporting(true);
     try {
-      const [subjectsRes, tasksRes, eventsRes, classesRes] = await Promise.all([
+      const [sRes, tRes, eRes, cRes] = await Promise.all([
         fetch("/api/subjects", { credentials: "include" }),
         fetch("/api/tasks", { credentials: "include" }),
         fetch("/api/events", { credentials: "include" }),
         fetch("/api/classes", { credentials: "include" }),
       ]);
-
-      const [subjects, tasks, events, classes] = await Promise.all([
-        subjectsRes.json(),
-        tasksRes.json(),
-        eventsRes.json(),
-        classesRes.json(),
-      ]);
+      const [subjects, tasks, events, classes] = await Promise.all([sRes.json(), tRes.json(), eRes.json(), cRes.json()]);
 
       const exportData = {
         version: 1,
@@ -76,11 +158,9 @@ export default function Profile() {
           userName: localStorage.getItem("userName") || "Estudiante",
           goalGrade: localStorage.getItem("goalGrade") || "8.5",
           theme: localStorage.getItem("theme") || "light",
+          colorPalette: localStorage.getItem("colorPalette") || "indigo",
         },
-        subjects,
-        tasks,
-        events,
-        classes,
+        subjects, tasks, events, classes,
       };
 
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
@@ -92,17 +172,9 @@ export default function Profile() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-
-      toast({
-        title: "Datos exportados",
-        description: "Tu archivo de respaldo fue descargado correctamente.",
-      });
-    } catch (err) {
-      toast({
-        title: "Error al exportar",
-        description: "No se pudo exportar los datos. Intenta de nuevo.",
-        variant: "destructive",
-      });
+      toast({ title: "Datos exportados", description: "Tu respaldo fue descargado correctamente." });
+    } catch {
+      toast({ title: "Error al exportar", variant: "destructive" });
     } finally {
       setIsExporting(false);
     }
@@ -111,27 +183,18 @@ export default function Profile() {
   const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
         const data = JSON.parse(ev.target?.result as string);
         if (!data.version || !data.subjects) {
-          toast({
-            title: "Archivo inválido",
-            description: "El archivo no tiene el formato correcto de AcaDash.",
-            variant: "destructive",
-          });
+          toast({ title: "Archivo inválido", variant: "destructive" });
           return;
         }
         setPendingImport(data);
         setShowImportConfirm(true);
       } catch {
-        toast({
-          title: "Error al leer el archivo",
-          description: "El archivo no es un JSON válido.",
-          variant: "destructive",
-        });
+        toast({ title: "Error al leer el archivo", variant: "destructive" });
       }
     };
     reader.readAsText(file);
@@ -142,96 +205,72 @@ export default function Profile() {
     if (!pendingImport) return;
     setIsImporting(true);
     setShowImportConfirm(false);
-
     try {
       const data = pendingImport;
-
-      // Restore preferences
       if (data.preferences) {
-        if (data.preferences.userName) localStorage.setItem("userName", data.preferences.userName);
+        if (data.preferences.userName) { localStorage.setItem("userName", data.preferences.userName); setName(data.preferences.userName); }
         if (data.preferences.goalGrade) localStorage.setItem("goalGrade", data.preferences.goalGrade);
-        if (data.preferences.theme) {
-          localStorage.setItem("theme", data.preferences.theme);
-          if (data.preferences.theme === "dark") {
-            document.documentElement.classList.add("dark");
-            setTheme("dark");
-          } else {
-            document.documentElement.classList.remove("dark");
-            setTheme("light");
-          }
-          setName(data.preferences.userName || "Estudiante");
-        }
+        if (data.preferences.theme) { localStorage.setItem("theme", data.preferences.theme); toggleTheme(data.preferences.theme === "dark"); }
+        if (data.preferences.colorPalette) applyPalette(data.preferences.colorPalette);
       }
-
-      // Import subjects and build ID mapping (old ID -> new ID)
       const subjectIdMap: Record<number, number> = {};
       for (const subject of data.subjects || []) {
         const { id, ...subjectData } = subject;
-        const res = await fetch("/api/subjects", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(subjectData),
-          credentials: "include",
-        });
-        if (res.ok) {
-          const created = await res.json();
-          subjectIdMap[id] = created.id;
-        }
+        const res = await fetch("/api/subjects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(subjectData), credentials: "include" });
+        if (res.ok) { const created = await res.json(); subjectIdMap[id] = created.id; }
       }
-
-      // Import classes with remapped subjectIds
       for (const cls of data.classes || []) {
         const { id, subjectId, ...classData } = cls;
-        const mappedSubjectId = subjectIdMap[subjectId] ?? subjectId;
-        await fetch("/api/classes", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...classData, subjectId: mappedSubjectId }),
-          credentials: "include",
-        });
+        await fetch("/api/classes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...classData, subjectId: subjectIdMap[subjectId] ?? subjectId }), credentials: "include" });
       }
-
-      // Import tasks with remapped subjectIds
       for (const task of data.tasks || []) {
         const { id, subjectId, ...taskData } = task;
-        const mappedSubjectId = subjectId ? (subjectIdMap[subjectId] ?? subjectId) : null;
-        await fetch("/api/tasks", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...taskData, subjectId: mappedSubjectId }),
-          credentials: "include",
-        });
+        await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...taskData, subjectId: subjectId ? (subjectIdMap[subjectId] ?? subjectId) : null }), credentials: "include" });
       }
-
-      // Import events (no subject references)
       for (const event of data.events || []) {
         const { id, ...eventData } = event;
-        await fetch("/api/events", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(eventData),
-          credentials: "include",
-        });
+        await fetch("/api/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(eventData), credentials: "include" });
       }
-
-      toast({
-        title: "Datos importados",
-        description: `Se importaron ${data.subjects?.length ?? 0} materias, ${data.tasks?.length ?? 0} tareas, ${data.classes?.length ?? 0} clases y ${data.events?.length ?? 0} eventos.`,
-      });
-
-      // Reload the page to reflect imported data
+      toast({ title: "Datos importados", description: `${data.subjects?.length ?? 0} materias, ${data.tasks?.length ?? 0} tareas importadas.` });
       setTimeout(() => window.location.reload(), 1000);
-    } catch (err) {
-      toast({
-        title: "Error al importar",
-        description: "Ocurrió un error durante la importación. Algunos datos pueden haberse importado parcialmente.",
-        variant: "destructive",
-      });
+    } catch {
+      toast({ title: "Error al importar", variant: "destructive" });
     } finally {
       setIsImporting(false);
       setPendingImport(null);
     }
   };
+
+  const handleDeleteAll = async () => {
+    setIsDeleting(true);
+    setShowDeleteConfirm(false);
+    try {
+      const [sRes, tRes, eRes, cRes] = await Promise.all([
+        fetch("/api/subjects", { credentials: "include" }),
+        fetch("/api/tasks", { credentials: "include" }),
+        fetch("/api/events", { credentials: "include" }),
+        fetch("/api/classes", { credentials: "include" }),
+      ]);
+      const [subjects, tasks, events, classes] = await Promise.all([sRes.json(), tRes.json(), eRes.json(), cRes.json()]);
+
+      await Promise.all([
+        ...subjects.map((s: any) => fetch(`/api/subjects/${s.id}`, { method: "DELETE", credentials: "include" })),
+        ...tasks.map((t: any) => fetch(`/api/tasks/${t.id}`, { method: "DELETE", credentials: "include" })),
+        ...events.map((e: any) => fetch(`/api/events/${e.id}`, { method: "DELETE", credentials: "include" })),
+        ...classes.map((c: any) => fetch(`/api/classes/${c.id}`, { method: "DELETE", credentials: "include" })),
+      ]);
+
+      localStorage.removeItem("goalGrade");
+      toast({ title: "Datos eliminados", description: "Todos tus datos han sido borrados." });
+      setTimeout(() => window.location.reload(), 1000);
+    } catch {
+      toast({ title: "Error al eliminar", variant: "destructive" });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const isDark = theme === "dark";
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -241,129 +280,239 @@ export default function Profile() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <Card className="glass-card">
+
+        {/* Personal info + photo */}
+        <Card className="glass-card md:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <User className="w-5 h-5 text-primary" />
               Información Personal
             </CardTitle>
-            <CardDescription>Tu nombre aparecerá en el dashboard.</CardDescription>
+            <CardDescription>Tu nombre y foto aparecerán en el dashboard.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Nombre</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="rounded-xl"
-                placeholder="Tu nombre"
-              />
+          <CardContent>
+            <div className="flex flex-col md:flex-row items-center gap-6">
+              <div className="relative group shrink-0">
+                <div
+                  onClick={() => photoInputRef.current?.click()}
+                  className="w-24 h-24 rounded-full overflow-hidden cursor-pointer ring-4 ring-primary/20 hover:ring-primary/50 transition-all"
+                >
+                  {photo ? (
+                    <img src={photo} alt="Perfil" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-white text-2xl font-bold">
+                      {name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Camera className="w-6 h-6 text-white" />
+                  </div>
+                </div>
+                {photo && (
+                  <button
+                    onClick={removePhoto}
+                    className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:opacity-90 transition-opacity shadow-md"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                )}
+                <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
+              </div>
+              <div className="flex-1 space-y-3 w-full">
+                <div className="space-y-1">
+                  <Label htmlFor="name">Nombre</Label>
+                  <Input
+                    id="name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="rounded-xl"
+                    placeholder="Tu nombre"
+                  />
+                </div>
+                <Button onClick={handleSave} className="rounded-xl transition-all active:scale-95">
+                  <Save className="w-4 h-4 mr-2" />
+                  Guardar Nombre
+                </Button>
+              </div>
             </div>
-            <Button onClick={handleSave} className="w-full rounded-xl transition-all active:scale-95">
-              <Save className="w-4 h-4 mr-2" />
-              Guardar Cambios
-            </Button>
           </CardContent>
         </Card>
 
+        {/* Apariencia */}
         <Card className="glass-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              {theme === "dark" ? <Moon className="w-5 h-5 text-primary" /> : <Sun className="w-5 h-5 text-primary" />}
+              {isDark ? <Moon className="w-5 h-5 text-primary" /> : <Sun className="w-5 h-5 text-primary" />}
               Apariencia
             </CardTitle>
-            <CardDescription>Personaliza cómo se ve la aplicación.</CardDescription>
+            <CardDescription>Modo oscuro y paleta de colores.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-5">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Modo Oscuro</Label>
                 <p className="text-sm text-muted-foreground">Cambia entre tema claro y oscuro.</p>
               </div>
-              <Switch
-                checked={theme === "dark"}
-                onCheckedChange={toggleTheme}
-              />
+              <Switch checked={isDark} onCheckedChange={toggleTheme} />
+            </div>
+            <div className="space-y-2">
+              <Label>Paleta de Colores</Label>
+              <div className="flex gap-3 flex-wrap">
+                {PALETTES.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => applyPalette(p.id)}
+                    title={p.label}
+                    className={`flex flex-col items-center gap-1.5 group transition-all`}
+                  >
+                    <div
+                      className={`w-9 h-9 rounded-full shadow-md transition-all ring-2 ring-offset-2 ring-offset-card ${palette === p.id ? "ring-foreground scale-110" : "ring-transparent"}`}
+                      style={{ background: `linear-gradient(135deg, ${p.light}, ${p.dark})` }}
+                    >
+                      {palette === p.id && (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Check className="w-4 h-4 text-white drop-shadow" />
+                        </div>
+                      )}
+                    </div>
+                    <span className={`text-xs font-medium ${palette === p.id ? "text-foreground" : "text-muted-foreground"}`}>
+                      {p.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           </CardContent>
         </Card>
 
+        {/* Notificaciones */}
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              {notifEnabled ? <Bell className="w-5 h-5 text-primary" /> : <BellOff className="w-5 h-5 text-muted-foreground" />}
+              Notificaciones
+            </CardTitle>
+            <CardDescription>Recibe alertas del navegador para tus clases, tareas y eventos.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Activar Notificaciones</Label>
+                <p className="text-sm text-muted-foreground">Alertas 10 min antes de clases y el día de tareas/eventos.</p>
+              </div>
+              <Switch checked={notifEnabled} onCheckedChange={toggleNotifications} />
+            </div>
+            {notifEnabled && (
+              <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 text-sm text-primary animate-in fade-in duration-300">
+                ✅ Las notificaciones están activas. Asegúrate de tener el navegador abierto.
+              </div>
+            )}
+            {!notifEnabled && Notification.permission === "denied" && (
+              <div className="p-3 rounded-xl bg-destructive/5 border border-destructive/20 text-sm text-destructive">
+                ⚠️ El navegador bloqueó las notificaciones. Habilítalas en la configuración del sitio.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Exportar */}
         <Card className="glass-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Download className="w-5 h-5 text-primary" />
               Exportar Datos
             </CardTitle>
-            <CardDescription>
-              Descarga un archivo con todos tus datos para respaldo o para cambiar de dispositivo.
-            </CardDescription>
+            <CardDescription>Descarga un respaldo completo para cambiarte de dispositivo.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button
-              onClick={handleExport}
-              disabled={isExporting}
-              variant="outline"
-              className="w-full rounded-xl transition-all active:scale-95"
-            >
+            <Button onClick={handleExport} disabled={isExporting} variant="outline" className="w-full rounded-xl transition-all active:scale-95">
               <Download className="w-4 h-4 mr-2" />
-              {isExporting ? "Exportando..." : "Descargar Respaldo"}
+              {isExporting ? "Exportando..." : "Descargar Respaldo (.json)"}
             </Button>
           </CardContent>
         </Card>
 
+        {/* Importar */}
         <Card className="glass-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Upload className="w-5 h-5 text-primary" />
               Importar Datos
             </CardTitle>
-            <CardDescription>
-              Restaura tus datos desde un archivo de respaldo. Se agregarán a los datos existentes.
-            </CardDescription>
+            <CardDescription>Restaura tus datos desde un archivo de respaldo.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-start gap-2 p-3 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-700 dark:text-orange-400 text-sm">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              <p>Los datos importados se añadirán a los existentes, no los reemplazarán.</p>
+              <p>Los datos importados se añadirán a los existentes.</p>
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json"
-              onChange={handleFileSelected}
-              className="hidden"
-            />
-            <Button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isImporting}
-              variant="outline"
-              className="w-full rounded-xl transition-all active:scale-95"
-            >
+            <input ref={fileInputRef} type="file" accept=".json" onChange={handleFileSelected} className="hidden" />
+            <Button onClick={() => fileInputRef.current?.click()} disabled={isImporting} variant="outline" className="w-full rounded-xl transition-all active:scale-95">
               <Upload className="w-4 h-4 mr-2" />
               {isImporting ? "Importando..." : "Seleccionar Archivo"}
             </Button>
           </CardContent>
         </Card>
+
+        {/* Zona de peligro */}
+        <Card className="glass-card md:col-span-2 border-destructive/30">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="w-5 h-5" />
+              Zona de Peligro
+            </CardTitle>
+            <CardDescription>Acciones irreversibles. Procede con cuidado.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 rounded-xl border border-destructive/20 bg-destructive/5">
+              <div>
+                <p className="font-semibold text-sm">Borrar todos los datos</p>
+                <p className="text-sm text-muted-foreground mt-0.5">Elimina permanentemente todas las materias, tareas, clases y eventos.</p>
+              </div>
+              <Button
+                variant="destructive"
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={isDeleting}
+                className="rounded-xl shrink-0 transition-all active:scale-95"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                {isDeleting ? "Borrando..." : "Borrar Todo"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
+      {/* Delete confirm */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Borrar todos los datos?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción eliminará permanentemente todas tus materias, tareas, clases y eventos. Esta acción <strong>no se puede deshacer</strong>. Te recomendamos exportar un respaldo antes.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteAll} className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Sí, borrar todo
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Import confirm */}
       <AlertDialog open={showImportConfirm} onOpenChange={setShowImportConfirm}>
         <AlertDialogContent className="rounded-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle>¿Importar datos?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se importarán {pendingImport?.subjects?.length ?? 0} materias,{" "}
-              {pendingImport?.tasks?.length ?? 0} tareas,{" "}
-              {pendingImport?.classes?.length ?? 0} clases y{" "}
-              {pendingImport?.events?.length ?? 0} eventos desde el archivo.
-              Esta acción se agregará a tus datos actuales.
+              Se importarán {pendingImport?.subjects?.length ?? 0} materias, {pendingImport?.tasks?.length ?? 0} tareas, {pendingImport?.classes?.length ?? 0} clases y {pendingImport?.events?.length ?? 0} eventos desde el archivo.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={executeImport} className="rounded-xl">
-              Importar
-            </AlertDialogAction>
+            <AlertDialogAction onClick={executeImport} className="rounded-xl">Importar</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
